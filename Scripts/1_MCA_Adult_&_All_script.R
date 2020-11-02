@@ -34,10 +34,8 @@ for(i in 1:ncol(data)){
 }
 sums <- 100000/sums
 
-#Create gene filter, selecting genes expressed in 20 cells or with 50 transcripts as viable#
-umi <- rowSums(data) >= 50
-percell <- rowSums(data != 0) >= 20
-Filter <- (umi + percell) > 0 
+#Create gene filter, selecting genes expressed in 20 cells as viable#
+Filter <- rowSums(data != 0) >= 20
 
 #Apply gene filter to overall data#
 data <- data[Filter,]
@@ -243,7 +241,7 @@ for(a in 1:length(data_names)){
       ORA <- data.frame(gene = q$gene, p = p[,e], q = q[,e], fc = fc[,e], pct.in = percent_in[,e], pct.rest = percent_rest[,e], stringsAsFactors = FALSE)
       
       #filter ORA by significant q values and fc limit#
-      ORA <- ORA[ORA$q <= 0.05 & ORA$fc >= 1,]
+      ORA <- ORA[ORA$q <= 0.05 & ORA$fc >= 2,]
       
       #create repeat column of identity name#
       ORA$Identity = colnames(q)[e]
