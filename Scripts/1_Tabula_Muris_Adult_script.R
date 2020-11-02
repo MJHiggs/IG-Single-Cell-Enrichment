@@ -42,17 +42,18 @@ load(files[1])
 total <- data.frame(t(as.matrix(tiss@data)))
 
 #Loop over the subsequent PROCESSED datasets and transform them in the same way before row binding to make the large total dataset#
-for(a in 3:length(files)){
+for(a in 2:length(files)){
   load(files[a])
   x <- data.frame(t(as.matrix(tiss@data)))
   total <- rbind(total, x)
+  print(a)
 }
 
 #Apply the previously generated gene filter on the total processed dataset#
 total <- total[,filter]
 
 #Save this datafile to retrieve later if wanted#
-#fwrite(total, "../Outputs/merged.csv", row.names = TRUE)
+fwrite(total, "../Outputs/merged.csv", row.names = TRUE)
 
 #Leave the raw data directory#
 setwd("../")
@@ -299,7 +300,7 @@ for (s in c(1:length(sex))){
 }  
 
 
-#### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
+#### STAGE 3 - VISUALISATION DOTPLOT ALL TISSUES ########################################################################################################
 
 #Arrange Fish by over-representation significance, take the identity variable as an order value#
 Fish <- Fish %>% arrange(Fish$ORA_p)
@@ -315,7 +316,7 @@ pat <- IG2 %>% filter(Sex == "P")
 Pat <- D2 %>% filter(gene %in% pat$Gene)
 
 #Recast Gene as a Factor and arrange by chromosomal order#
-Pat$gene <- factor(Pat$gene, levels = rev(IIGG$Gene))
+Pat$gene <- factor(Pat$gene, levels = rev(pat$Gene))
 Pat <- Pat %>% arrange(rev(gene))
 
 #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
@@ -323,11 +324,14 @@ mat <- IG2 %>% filter(Sex == "M" | Sex == "I")
 Mat <- D2 %>% filter(gene %in% mat$Gene)
 
 #Recast Gene as a Factor and arrange by chromosomal order#
-Mat$gene <- factor(Mat$gene, levels = rev(IIGG$Gene))
+Mat$gene <- factor(Mat$gene, levels = rev(mat$Gene))
 Mat <- Mat %>% arrange(rev(gene))
 
+Pat$fc <- log2(Pat$fc+1)
+Mat$fc <- log2(Mat$fc+1)
+
 #Create PDF to save PEG dotplot#
-pdf(paste("Outputs/PEG_DOTPLOT.pdf", sep=""))
+pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
 
 #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
 print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
@@ -336,12 +340,12 @@ print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse
         theme(axis.text.x = element_text(angle = 90)) +
         scale_size_continuous(limits = c(0,max(D2$avg)))+
         scale_x_discrete(limits = order) +
-        labs(size = "Normalised_Mean_Expression", color = "Proportion_Expression_vs_Mean"))
+        labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
 #Save PDF#
 dev.off()
 
 #Create PDF to save MEG dotplot#  
-pdf(paste("Outputs/MEG_DOTPLOT.pdf", sep=""))
+pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
 
 #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
 print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
@@ -350,8 +354,10 @@ print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse
         theme(axis.text.x = element_text(angle = 90)) +
         scale_size_continuous(limits = c(0,max(D2$avg)))+
         scale_x_discrete(limits = order) +
-        labs(size = "Normalised_Mean_Expression", color = "Proportion_Expression_vs_Mean"))
+        labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
 #Save PDF#
 dev.off()
+}
+
 
 
