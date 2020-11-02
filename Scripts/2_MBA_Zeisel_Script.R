@@ -73,9 +73,6 @@ UMI <- 5000/lfile$col.attrs$`_Total`[]
 #Create list of datasets to put through basis workflow#
 data_names <- c("class_whole", "tissue_neurons", "subclass_neurons")
 
-#Set fold change limits for the datasets, 2 for all cells and nervous system regions and 1 for neuron subtypes#  
-limit <- c(2,2, 1)
-
 #Loop through the data configuration available#
 for (a in 1:length(data_names){
   #If data includes all available cells#
@@ -170,7 +167,7 @@ for (a in 1:length(data_names){
   
   #### ORA and GSEA ANALYSIS ################################################################################################  
   
-  #Set up the paretal origin nature of the IGs and the FC limits to loop over#
+  #Set up the paretal origin nature of the IGs to loop over#
   if(a == 2){
     sex <- c("P","M","ALL")
   }else{ sex <- c("ALL")}
@@ -198,7 +195,7 @@ for (a in 1:length(data_names){
       ORA <- data.frame(gene = q$ensmbl, p = p[,e], q = q[,e], fc = fc[,e], pct.in = percent_in[,e], pct.rest = percent_rest[,e], stringsAsFactors = FALSE)
       
       #filter ORA by significant q values and fc limit#
-      ORA <- ORA[ORA$q <= 0.05 & ORA$fc >= limit[a],]
+      ORA <- ORA[ORA$q <= 0.05 & ORA$fc >= 2,]
       
       #create repeat column of identity name#
       ORA$Identity = colnames(q)[e]
@@ -208,7 +205,7 @@ for (a in 1:length(data_names){
       Fish[e-1,2] = nrow(ORA)
       
       #Filter ORA for imprinted genes only and add that to IGs file and the total number to Fish#
-      ig <- ORA %>% filter(gene %in%  IIGG$ï..Ensmbl)
+      ig <- ORA %>% filter(gene %in%  IIGG$Ã¯..Ensmbl)
       ig$gene <- tag[as.character(ig$gene)]
       IGs <- rbind(IGs, ig)
       Fish[e-1,3] = nrow(ig)
@@ -231,7 +228,7 @@ for (a in 1:length(data_names){
     ### OVER REPRESENTATION ANALYSIS (ORA) ########################################################################
     
     #Create an identity group filter based on having a minimum of 5 imprinted genes upregulated#
-    tissue_ORA <- Fish$Identity[Fish$IG >= (as.numeric(sum(q$ensmbl %in% IIGG$ï..Ensmbl))/20)]
+    tissue_ORA <- Fish$Identity[Fish$IG >= (as.numeric(sum(q$ensmbl %in% IIGG$Ã¯..Ensmbl))/20)]
     
     #As long as one cell identity has 5 or more IGs, run a Fisher's Exact test#  
     if(length(tissue_ORA) > 0){
@@ -239,7 +236,7 @@ for (a in 1:length(data_names){
       for (c in 1:nrow(Fish)){
         if(Fish$Identity[c] %in% tissue_ORA){
           #Create the 2x2 matrix for the fisher's exact test - no. IG in group, no. of IG left over, no. of UpRegulated genes in group minus no. of IGs, all genes left over
-          test <- data.frame(gene.interest=c(as.numeric(Fish[c,3]),as.numeric(sum(q$ensmbl %in% IIGG$ï..Ensmbl) - Fish[c,3])), gene.not.interest=c((as.numeric(Fish[c,2]) - as.numeric(Fish[c,3])),as.numeric(nrow(q) - Fish[c,2])- as.numeric(sum(q$ensmbl %in% IIGG$ï..Ensmbl) - Fish[c,3])))
+          test <- data.frame(gene.interest=c(as.numeric(Fish[c,3]),as.numeric(sum(q$ensmbl %in% IIGG$Ã¯..Ensmbl) - Fish[c,3])), gene.not.interest=c((as.numeric(Fish[c,2]) - as.numeric(Fish[c,3])),as.numeric(nrow(q) - Fish[c,2])- as.numeric(sum(q$ensmbl %in% IIGG$Ã¯..Ensmbl) - Fish[c,3])))
           row.names(test) <- c("In_category", "not_in_category")
           f <- fisher.test(test, alternative = "greater")
           #Update Fish with 
@@ -270,7 +267,7 @@ for (a in 1:length(data_names){
     names(Fish)[length(names(Fish))] <- "Mean FC IG"
     
     ##Calculate mean fold change for the rest of the upregulated genes per tissue and update a column in Fish## 
-    rest <- DEGs[!(DEGs$gene %in% IIGG$ï..Ensmbl),] %>% group_by(Identity) %>% summarise("mean" = mean(fc))
+    rest <- DEGs[!(DEGs$gene %in% IIGG$Ã¯..Ensmbl),] %>% group_by(Identity) %>% summarise("mean" = mean(fc))
     
     #Merge Fish with rest to have a Mean Fold change Rest of genes column#
     Fish <- merge(Fish, rest, by = "Identity")
@@ -314,21 +311,21 @@ for (a in 1:length(data_names){
     
     #Filter Main data for Imprinted Genes and create Identity column#
     if(a == 1){
-      D <-  data.frame(lfile[["matrix"]][, lfile$row.attrs$Accession[] %in% q$ensmbl[q$ensmbl %in% IIGG$ï..Ensmbl]])
+      D <-  data.frame(lfile[["matrix"]][, lfile$row.attrs$Accession[] %in% q$ensmbl[q$ensmbl %in% IIGG$Ã¯..Ensmbl]])
       D <- log((D * UMI)+1)
     }else{ 
-      D <- data.frame(lfile[["matrix"]][lfile$col.attrs$Class[] == "Neurons", lfile$row.attrs$Accession[] %in% q$ensmbl[q$ensmbl %in% IIGG$ï..Ensmbl]])
+      D <- data.frame(lfile[["matrix"]][lfile$col.attrs$Class[] == "Neurons", lfile$row.attrs$Accession[] %in% q$ensmbl[q$ensmbl %in% IIGG$Ã¯..Ensmbl]])
       D <- log((D * UMI[lfile$col.attrs$Class[] == "Neurons"])+1)
     }
     
     #Rename colnames with gene names and ad the iden column#
-    colnames(D) <- lfile$row.attrs$Gene[lfile$row.attrs$Accession[] %in% q$ensmbl[q$ensmbl %in% IIGG$ï..Ensmbl]]
+    colnames(D) <- lfile$row.attrs$Gene[lfile$row.attrs$Accession[] %in% q$ensmbl[q$ensmbl %in% IIGG$Ã¯..Ensmbl]]
     D$iden <- eval(parse(text = data_names[a]))
     #Gather this data and group by gene, identity and get per gene per identity read averages#
     D <- D  %>% gather("gene", "reads", -iden)
     D <- D %>% group_by(gene, iden) %>% summarise("avg" = mean(as.numeric(reads)))
     #Create matching file of fc's with just imprinted genes#
-    FC <- fc %>% filter(fc$ensmbl %in% IIGG$ï..Ensmbl)
+    FC <- fc %>% filter(fc$ensmbl %in% IIGG$Ã¯..Ensmbl)
     FC <- FC[,-1] %>% gather(iden, fc, -gene) 
     #Create D2 - combination of D and FC ready for making dotplots#
     D2 <- left_join(D, FC, by = c("gene","iden"))
