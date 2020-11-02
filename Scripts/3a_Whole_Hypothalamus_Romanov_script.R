@@ -48,7 +48,7 @@ for(i in 1:ncol(d)){
 } # less than a minute #
 
 #Limit S to genes with 20 cells expressed and use it to filter d#
-S <- S[S$V3 >= 20,] 
+S <- S[S$V3 >= 20,] #14923
 d <- d[,colnames(d) %in% S$gene]
 
 #Create d4 with only neurons#
@@ -59,8 +59,9 @@ S <- data.frame(gene = colnames(d4))
 for(i in 1:ncol(d4)){
   S[i,2] <- sum(as.numeric(unlist(d4[-1,i]))) 
   S[i,3] <- sum(as.numeric(unlist(d4[-1,i]))>0) 
-} # less than 30 seconds #
-S <- S[S$V2 >= 50 | S$V3 >= 20,]
+} 
+
+S <- S[S$V3 >= 20,]
 
 #Create scale factor vector to 10000 reads per cell#  
 umi <- 10000/as.numeric(data[8,-1])
@@ -70,7 +71,7 @@ for (e in 2:nrow(d)){
   v <- as.numeric(d[e,]) * umi[e-1]
   d[e,] <- log2(v + 1)
   print(e)
-} # ~ 10 minutes #
+} 
 
 #Create cell column with cell lineage identity and identity column with specific neuron identities#
 d$cell <- t(data[1,-1])
@@ -296,8 +297,8 @@ for(a in 1:length(data_names)){
     Fish$Adjust_GSEA <- p.adjust(Fish$GSEA_p, method = "bonferroni")
     names(Fish)[length(names(Fish))] <- "GSEA_q"
   }
-  
-### IMPRINTED GENE TOP TISSUE EXPRESSION ######################################################################    
+
+### IMPRINTED GENE CELL EXPRESSION ######################################################################    
   
   #Filter Main data for Imprinted Genes and create Identity column#
   D <- wil[,colnames(wil) %in% c(as.character(IG$Gene), "iden")] %>% gather("gene", "reads", -iden)
@@ -311,21 +312,18 @@ for(a in 1:length(data_names)){
   #Create u with the tissue with max expression for each IG and save that file ##
   u <- D2 %>% group_by(gene) %>% filter(gene %in% IG$Gene & avg == max(avg))
   fwrite(u, paste("Outputs/", data_names[a], "/IG_Top_Expressed_Subpopulations.csv", sep =""))
-  #update a Fish column with the number of IGs with top expression in that tissue#
-  u <- u %>% group_by(iden) %>% summarise("Top_Tissue_IGs" = n())
-  Fish <- merge(Fish, u, by.x = "Identity", by.y = "iden", all = TRUE)
-  
+
   #write the finished Fish file#
   fwrite(Fish, paste("Outputs/", data_names[a], "/Enrichment_Analysis.csv", sep =""))
-  
-#### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
+} 
+#### STAGE 3 - VISUALISATION DOTPLOT FOR NEURON UPREGULATED GENES ########################################################################################################
   
   #Arrange Fish by over-representation significance, take the identity variable as an order value#
   Fish <- Fish %>% arrange(Fish$ORA_p)
   order <- Fish$Identity
   
   #Filter original IG list with those in the dataset#
-  IG2 <- IG[IG$Gene %in% D2$gene,]
+  IG2 <-IG[IG$Gene %in% IGs$gene[IGs$Identity == "neurons"],]
   #Arrange IGs by the chromosomal order#
   IG2 <- IG2 %>% arrange(IG2$Order)
   
@@ -334,7 +332,7 @@ for(a in 1:length(data_names)){
   Pat <- D2 %>% filter(gene %in% pat$Gene)
   
   #Recast Gene as a Factor and arrange by chromosomal order#
-  Pat$gene <- factor(Pat$gene, levels = rev(IG$Gene))
+  Pat$gene <- factor(Pat$gene, levels = rev(pat$Gene))
   Pat <- Pat %>% arrange(rev(gene))
   
   #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
@@ -342,34 +340,35 @@ for(a in 1:length(data_names)){
   Mat <- D2 %>% filter(gene %in% mat$Gene)
   
   #Recast Gene as a Factor and arrange by chromosomal order#
-  Mat$gene <- factor(Mat$gene, levels = rev(IG$Gene))
+  Mat$gene <- factor(Mat$gene, levels = rev(mat$Gene))
   Mat <- Mat %>% arrange(rev(gene))
   
+  Pat$fc <- log2(Pat$fc+1)
+  Mat$fc <- log2(Mat$fc+1)
   #Create PDF to save PEG dotplot#
-  pdf(paste("Outputs/", data_names[a],"/PEG_DOTPLOT.pdf", sep=""))
+  pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
   
   #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
   print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
           theme_classic() +
-          scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
+          scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
           theme(axis.text.x = element_text(angle = 90)) +
           scale_size_continuous(limits = c(0,max(D2$avg)))+
           scale_x_discrete(limits = order) +
-          labs(size = "Normalised_Mean_Expression", color = "Proportion_Expression_vs_Mean"))
+          labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
   #Save PDF#
   dev.off()
   
   #Create PDF to save MEG dotplot#  
-  pdf(paste("Outputs/", data_names[a],"/MEG_DOTPLOT.pdf", sep=""))
+  pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
   
   #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
   print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
           theme_classic() +
-          scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
+          scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
           theme(axis.text.x = element_text(angle = 90)) +
           scale_size_continuous(limits = c(0,max(D2$avg)))+
           scale_x_discrete(limits = order) +
-          labs(size = "Normalised_Mean_Expression", color = "Proportion_Expression_vs_Mean"))
+          labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
   #Save PDF#
   dev.off()
-}

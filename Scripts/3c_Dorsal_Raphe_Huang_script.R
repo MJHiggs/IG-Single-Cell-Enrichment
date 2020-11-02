@@ -35,10 +35,8 @@ for (a in 2:length(files)){
   count <- cbind(count, counts)
 }
 
-#use the raw matrix to create gene filters and finally a logical filter to filter out weakly expressed genes#
-umi <- rowSums(count) >= 50
-percell <- (rowSums(count != 0)) >= 20
-filter <- (umi + percell) > 0 
+#use the raw matrix to create gene filter to filter out weakly expressed genes#
+filter <- (rowSums(count != 0)) >= 20
 
 #Remove these matrices from working memory keeping the filter#
 rm(counts)
@@ -85,9 +83,7 @@ seurat <- readRDS("Data/neurons.rds")
 
 #Use raw counts to create a new gene filter for just neurons#
 counts <- as.matrix(seurat@raw.data)
-umi <- rowSums(counts) >= 50
-percell <- (rowSums(counts != 0)) >= 20
-filter <- (umi + percell) > 0 
+filter <- (rowSums(counts != 0)) >= 20
 
 #Create a neurons file with the processed data and create columns for the two levels of annotations#
 Neurons <- data.frame(t(as.matrix(seurat@data)))
@@ -105,9 +101,6 @@ colnames(Neurons_Global)[ncol(Neurons_Global)] = "iden"
 
 ##Create the list of data to loop through and the names of the data to be used when creating folders#
 data_names <- c("Cell_Types", "Neurons_Global", "Neurons_sub")
-
-#Set fold change limits for upregulated genes, 2 for global cells and 1 for neuron-specific#  
-limit <- c(2, 1, 1)
 
 #Create an Outputs directory to save pending analysis#
 ifelse(!dir.exists(file.path(getwd(), "Outputs")), dir.create(file.path(getwd(), "Outputs")), FALSE)
@@ -205,7 +198,7 @@ for(a in 1:length(data_names)){
     ORA <- data.frame(gene = q$gene, p = p[,e], q = q[,e], fc = fc[,e], pct.in = percent_in[,e], pct.rest = percent_rest[,e], stringsAsFactors = FALSE)
     
     #filter ORA by significant q values and fc limit#
-    ORA <- ORA[ORA$q <= 0.05 & ORA$fc >= limit[a],]
+    ORA <- ORA[ORA$q <= 0.05 & ORA$fc >= 1,]
     
     #create repeat column of identity name#
     ORA$Identity = colnames(q)[e]
@@ -328,65 +321,66 @@ for(a in 1:length(data_names)){
   #Create u with the tissue with max expression for each IG and save that file ##
   u <- D2 %>% group_by(gene) %>% filter(gene %in% IG$Gene & avg == max(avg))
   fwrite(u, paste("Outputs/", data_names[a], "/IG_Top_Expressed_Subpopulation.csv", sep =""))
-  #update a Fish column with the number of IGs with top expression in that tissue#
-  u <- u %>% group_by(iden) %>% summarise("Top_Tissue_IGs" = n())
-  Fish <- merge(Fish, u, by.x = "Identity", by.y = "iden", all = TRUE)
-  
+
   #write the finished Fish file#
   fwrite(Fish, paste("Outputs/", data_names[a], "/Enrichment_Analysis.csv", sep =""))
   
-#### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
-  
-  #Arrange Fish by over-representation significance, take the identity variable as an order value#
-  Fish <- Fish %>% arrange(Fish$ORA_p)
-  order <- Fish$Identity
-  
-  #Filter original IG list with those in the dataset#
-  IG2 <- IG[IG$Gene %in% D2$gene,]
-  #Arrange IGs by the chromosomal order#
-  IG2 <- IG2 %>% arrange(IG2$Order)
-  
-  #Filter IGs for Paternally expressed genes (PEGs) only and create Pat using the PEG only filter#
-  pat <- IG2 %>% filter(Sex == "P")
-  Pat <- D2 %>% filter(gene %in% pat$Gene)
-  
-  #Recast Gene as a Factor and arrange by chromosomal order#
-  Pat$gene <- factor(Pat$gene, levels = rev(IG$Gene))
-  Pat <- Pat %>% arrange(rev(gene))
-  
-  #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
-  mat <- IG2 %>% filter(Sex == "M" | Sex == "I")
-  Mat <- D2 %>% filter(gene %in% mat$Gene)
-  
-  #Recast Gene as a Factor and arrange by chromosomal order#
-  Mat$gene <- factor(Mat$gene, levels = rev(IG$Gene))
-  Mat <- Mat %>% arrange(rev(gene))
-  
-  #Create PDF to save PEG dotplot#
-  pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
-  
-  #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
-  print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-          theme_classic() +
-          scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
-          theme(axis.text.x = element_text(angle = 90)) +
-          scale_size_continuous(limits = c(0,max(D2$avg)))+
-          scale_x_discrete(limits = order) +
-          labs(size = "Normalised_Mean_Expression", color = "Proportion_Expression_vs_Mean"))
-  #Save PDF#
-  dev.off()
-  
-  #Create PDF to save MEG dotplot#  
-  pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
-  
-  #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
-  print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-          theme_classic() +
-          scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
-          theme(axis.text.x = element_text(angle = 90)) +
-          scale_size_continuous(limits = c(0,max(D2$avg)))+
-          scale_x_discrete(limits = order) +
-          labs(size = "Normalised_Mean_Expression", color = "Proportion_Expression_vs_Mean"))
-  #Save PDF#
-  dev.off()
+#### STAGE 3 - VISUALISATION DOTPLOT for NEURONS in global cell comparison########################################################################################################
+  if(a == 1){  
+    #Arrange Fish by over-representation significance, take the identity variable as an order value#
+    Fish <- Fish %>% arrange(Fish$ORA_p)
+    order <- Fish$Identity
+    
+    #Filter original IG list with those in the dataset#
+    IG2 <-IG[IG$Gene %in% IGs$gene[IGs$Identity %in% c("Dopaminergic Neurons", "Serotonergic Neurons", "Peptidergic Neurons", "Glutamatergic Neurons", "GABAergic Neurons")],]
+    #Arrange IGs by the chromosomal order#
+    IG2 <- IG2 %>% arrange(IG2$Order)
+    
+    #Filter IGs for Paternally expressed genes (PEGs) only and create Pat using the PEG only filter#
+    pat <- IG2 %>% filter(Sex == "P")
+    Pat <- D2 %>% filter(gene %in% pat$Gene)
+    
+    #Recast Gene as a Factor and arrange by chromosomal order#
+    Pat$gene <- factor(Pat$gene, levels = rev(pat$Gene))
+    Pat <- Pat %>% arrange(rev(gene))
+    
+    #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
+    mat <- IG2 %>% filter(Sex == "M" | Sex == "I")
+    Mat <- D2 %>% filter(gene %in% mat$Gene)
+    
+    #Recast Gene as a Factor and arrange by chromosomal order#
+    Mat$gene <- factor(Mat$gene, levels = rev(mat$Gene))
+    Mat <- Mat %>% arrange(rev(gene))
+    
+    Pat$fc <- log2(Pat$fc+1)
+    Mat$fc <- log2(Mat$fc+1)
+    
+    #Create PDF to save PEG dotplot#
+    pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
+    
+    #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
+    print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
+            theme_classic() +
+            scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,8)) +
+            theme(axis.text.x = element_text(angle = 90)) +
+            scale_size_continuous(limits = c(0,max(D2$avg)))+
+            scale_x_discrete(limits = order) +
+            labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
+    #Save PDF#
+    dev.off()
+    
+    #Create PDF to save MEG dotplot#  
+    pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
+    
+    #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
+    print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
+            theme_classic() +
+            scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,8)) +
+            theme(axis.text.x = element_text(angle = 90)) +
+            scale_size_continuous(limits = c(0,max(D2$avg)))+
+            scale_x_discrete(limits = order) +
+            labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
+    #Save PDF#
+    dev.off()
+  }
 }

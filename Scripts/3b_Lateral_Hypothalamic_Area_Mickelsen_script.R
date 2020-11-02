@@ -274,6 +274,7 @@ for (a in 1:length(data_names)){
     Fish$Adjust_GSEA <- p.adjust(Fish$GSEA_p, method = "bonferroni")
     names(Fish)[length(names(Fish))] <- "GSEA_q"
   }
+  
   ##Create D - file of average expression of imprinted genes for each tissue##
   
   #Filter Main data for Imprinted Genes and create Identity column#
@@ -290,10 +291,7 @@ for (a in 1:length(data_names)){
   #create u with the tissue with max expression for each IG and save that file#
   u <- D2 %>% group_by(gene) %>% filter(gene %in% IG$Gene & (avg == max(avg) & max(avg) > 0))
   fwrite(u, paste("Outputs/", data_names[a], "/IG_Top_Expressed_Subpopulation.csv", sep =""))
-  #update a Fish column with the number of IGs with top expression in that tissue#
-  u <- u %>% group_by(iden) %>% summarise("Top Tissue IGs" = n())
-  Fish <- merge(Fish, u, by.x = "Identity", by.y = "iden", all = TRUE)
-  
+
   #write the finished Fish file#
   fwrite(Fish, paste("Outputs/", data_names[a], "/Enrichment_Analysis.csv", sep =""))  
   
@@ -313,7 +311,7 @@ for (a in 1:length(data_names)){
   Pat <- D2 %>% filter(gene %in% pat$Gene)
   
   #Recast Gene as a Factor and arrange by chromosomal order#
-  Pat$gene <- factor(Pat$gene, levels = rev(IG$Gene))
+  Pat$gene <- factor(Pat$gene, levels = rev(pat$Gene))
   Pat <- Pat %>% arrange(rev(gene))
   
   #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
@@ -321,34 +319,37 @@ for (a in 1:length(data_names)){
   Mat <- D2 %>% filter(gene %in% mat$Gene)
   
   #Recast Gene as a Factor and arrange by chromosomal order#
-  Mat$gene <- factor(Mat$gene, levels = rev(IG$Gene))
+  Mat$gene <- factor(Mat$gene, levels = rev(mat$Gene))
   Mat <- Mat %>% arrange(rev(gene))
   
+  Pat$fc <- log2(Pat$fc+1)
+  Mat$fc <- log2(Mat$fc+1)
+  
   #Create PDF to save PEG dotplot#
-  pdf(paste("Outputs/", data_names[a], "PEG_DOTPLOT.pdf", sep=""))
+  pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
   
   #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
   print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
           theme_classic() +
-          scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
+          scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
           theme(axis.text.x = element_text(angle = 90)) +
           scale_size_continuous(limits = c(0,max(D2$avg)))+
           scale_x_discrete(limits = order) +
-          labs(size = "Normalised_Mean_Expression", color = "Proportion_Expression_vs_Mean"))
+          labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
   #Save PDF#
   dev.off()
   
   #Create PDF to save MEG dotplot#  
-  pdf(paste("Outputs/", data_names[a], "MEG_DOTPLOT.pdf", sep=""))
+  pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
   
   #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
   print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
           theme_classic() +
-          scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
+          scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
           theme(axis.text.x = element_text(angle = 90)) +
           scale_size_continuous(limits = c(0,max(D2$avg)))+
           scale_x_discrete(limits = order) +
-          labs(size = "Normalised_Mean_Expression", color = "Proportion_Expression_vs_Mean"))
+          labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
   #Save PDF#
   dev.off()
 }
