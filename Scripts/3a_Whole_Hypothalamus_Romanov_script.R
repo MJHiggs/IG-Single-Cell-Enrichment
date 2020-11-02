@@ -47,8 +47,8 @@ for(i in 1:ncol(d)){
   S[i,3] <- sum(as.numeric(unlist(d[-1,i]))>0) 
 } # less than a minute #
 
-#Limit S to genes with 50 reads or 20 cells expressed and use it to filter d#
-S <- S[S$V2 >= 50 | S$V3 >= 20,] #14923
+#Limit S to genes with 20 cells expressed and use it to filter d#
+S <- S[S$V3 >= 20,] 
 d <- d[,colnames(d) %in% S$gene]
 
 #Create d4 with only neurons#
@@ -88,9 +88,6 @@ just_neurons <- just_neurons[,colnames(just_neurons) %in% S$gene | colnames(just
 
 ##Create the list of data to loop through and the names of the data to be used when creating folders#
 data_names <- c("cell_types", "just_neurons")
-
-#Set two fold change limits, 2 for all cells and 1 for neuron subtypes#  
-limit <- c(2,1)
 
 ### ONE-SIDED WILCOXON TEST ###################################################################################
 
@@ -191,7 +188,7 @@ for(a in 1:length(data_names)){
     ORA <- data.frame(gene = q$gene, p = p[,e], q = q[,e], fc = fc[,e], pct.in = percent_in[,e], pct.rest = percent_rest[,e], stringsAsFactors = FALSE)
     
     #filter ORA by significant q values and fc limit#
-    ORA <- ORA[ORA$q <= 0.05 & ORA$fc >= limit[a],]
+    ORA <- ORA[ORA$q <= 0.05 & ORA$fc >= 1,]
     
     #create repeat column of identity name#
     ORA$Identity = colnames(q)[e]
