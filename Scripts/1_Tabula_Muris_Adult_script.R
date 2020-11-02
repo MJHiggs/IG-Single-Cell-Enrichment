@@ -34,10 +34,8 @@ for(a in 2:length(files)){
   total <- rbind(total, x)
 }
 
-#Create the gene filters, genes with 50 reads or expressed in 20 unique cells#
-umi <- colSums(total) >= 50
-percell <- colSums(total != 0) >= 20
-filter <- umi + percell > 0
+#Create the gene filters, genes expressed in 20 unique cells#
+filter <- colSums(total != 0) >= 20
 
 #Load the first file again and this time create the dataframe with the transformed PROCESSED dataset#
 load(files[1])
