@@ -39,7 +39,7 @@ counts <- counts[,..counts2]
 
 #Create another dataframe with gene information and filter genes by those expressed in 20 cells#
 genesort <- data.frame(gene = counts$Gene, umi = rowSums(counts[,-1]), percell = rowSums(counts[,-1] != 0), stringsAsFactors = FALSE)
-genesort <- genesort %>% filter(percell > 20)
+genesort <- genesort %>% filter(percell >= 20)
 
 #Filter the barcode identities by viable cells and create a dictionart to assign cell barcodes with cell identities#
 barcode <- barcodes %>% filter(barcodes$X %in% viable)
@@ -56,7 +56,7 @@ counts3$Gene <- counts$Gene
 
 #Sort counts by viable genes (50 reads | 20 cells) and filter genes#
 genesortneurons <- data.frame(gene = counts3$Gene, umi = rowSums(counts3[,-1216]), percell = rowSums(counts3[,-1216] != 0), stringsAsFactors = FALSE)
-genesortneurons <- genesortneurons %>% filter(percell > 20)
+genesortneurons <- genesortneurons %>% filter(percell >= 20)
 
 #Filter the normalised matrix to the high quality cells#
 data <- Expresssion_Matrix_unfiltered[rownames(Expresssion_Matrix_unfiltered) %in% genesort$gene,colnames(Expresssion_Matrix_unfiltered) %in% viable]
