@@ -37,7 +37,7 @@ sums <- 100000/sums
 filter <- rowSums(data != 0) >= 20
 
 #Apply gene filter to overall data#
-data <- data[Filter,]
+data <- data[filter,]
 
 #Create dictionary to map tissue identities onto cell barcodes#
 dict <- ID$Tissue
