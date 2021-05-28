@@ -4,6 +4,8 @@
 library(tidyverse)
 library(data.table)
 library(liger)
+library(ggnewscale)
+library(cowplot)
 BiocManager::install("GEOquery")
 library(GEOquery)
 
@@ -36,7 +38,7 @@ Arc3$V1 = NULL
 #Read in the filtered data and restrict cells and genes to those in the previously filtered data#
 A <- data.frame(t(Arc3), stringsAsFactors = FALSE)
 colnames(A) <- rownames(Arc3)
-Arc2 <- fread("GSE93374/GSE93374_Merged_all_020816_BatchCorrected_LNtransformed_doubletsremoved_Data.txt")
+Arc2 <- fread("GSE93374/GSE93374_Merged_all_020816_BatchCorrected_LNtransformed_doubletsremoved_Data.txt.gz")
 A <- A[rownames(A) %in% colnames(Arc2),]
 A <- A[,colnames(A) %in% Arc2$V1]
 
@@ -44,17 +46,18 @@ A <- A[,colnames(A) %in% Arc2$V1]
 Filter <- (colSums(A > 0)) >= 20
 
 #Create a size factor vector for each cell to 10000 reads#
-UMI <- 10000/rowSums(A)
-aa <- A
+Scale <- 10000/rowSums(A)
+aa <- data.frame(t(A))
+rownames(aa) <- colnames(A)
 
 ##Loop through each cell and normalise each cell to 10000 reads and log transform the data#
-for (j in 1:nrow(A)){
-  aa[j,] = aa[j,]*UMI[j]
-  aa[j,] = log(aa[j,] + 1)
+for (j in 1:ncol(aa)){
+  aa[,j] = aa[,j]*Scale[j]
+  aa[,j] = log(aa[,j] + 1)
   print(j)
 }
 
-#Use Gene filter on the data and set up a clone#
+aa <- data.frame(t(aa))
 aa <- aa[,Filter]
 
 #Clone aa is the neuronal only identities and removed the miss cell identity group#
@@ -72,7 +75,8 @@ just_neurons <- aa[, Filter]
 
 #Create iden column for the dataset using dict#
 dict <- sapply(strsplit(unique(Arc1$`Neuron Subclusters`),"\\."), `[`, 2) 
-names(dict) <- sapply(strsplit(unique(Arc1$`Neuron Subclusters`),"\\."), `[`, 1)
+dict <- c(dict, "Th/Sst", "Arx/Nr5a2", "Tbx19")
+names(dict) <- c(sapply(strsplit(unique(Arc1$`Neuron Subclusters`),"\\."), `[`, 1), "n03", "n07", "n27")
 just_neurons$iden <- dict[just_neurons$iden]
 
 #Create A4 the neuron dataset with the non-ARC neurons removed#
@@ -107,6 +111,7 @@ for(a in 1:length(data_list)){
   fc <- data.frame("gene" = colnames(wil)[-ncol(wil)], stringsAsFactors = FALSE)
   percent_in <- data.frame("gene" = colnames(wil)[-ncol(wil)], stringsAsFactors = FALSE)
   percent_rest <- data.frame("gene" = colnames(wil)[-ncol(wil)], stringsAsFactors = FALSE)
+  q <- data.frame("gene" = colnames(wil)[-ncol(wil)], stringsAsFactors = FALSE)
   
   #Loop over every gene/column apart from the final 'iden' column#
   for (b in 1:(ncol(wil)-1)){
@@ -302,66 +307,83 @@ for(a in 1:length(data_list)){
 
   #write the finished Fish file#
   fwrite(Fish, paste("Outputs/", data_names[a], "/Enrichment_Analysis.csv", sep =""))
-  
-#### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
-  
-  #Arrange Fish by over-representation significance, take the identity variable as an order value#
-  Fish <- Fish %>% arrange(Fish$ORA_p)
-  order <- Fish$Identity
-  
-  #Filter original IG list with those in the dataset#
-  IG2 <- IG[IG$Gene %in% D2$gene,]
-  #Arrange IGs by the chromosomal order#
-  IG2 <- IG2 %>% arrange(IG2$Order)
-  
-  #Filter IGs for Paternally expressed genes (PEGs) only and create Pat using the PEG only filter#
-  pat <- IG2 %>% filter(Sex == "P")
-  Pat <- D2 %>% filter(gene %in% pat$Gene)
-  
-  #Recast Gene as a Factor and arrange by chromosomal order#
-  Pat$gene <- factor(Pat$gene, levels = rev(pat$Gene))
-  Pat <- Pat %>% arrange(rev(gene))
-  
-  #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
-  mat <- IG2 %>% filter(Sex == "M" | Sex == "I")
-  Mat <- D2 %>% filter(gene %in% mat$Gene)
-  
-  #Recast Gene as a Factor and arrange by chromosomal order#
-  Mat$gene <- factor(Mat$gene, levels = rev(mat$Gene))
-  Mat <- Mat %>% arrange(rev(gene))
-  
-  Pat$fc <- log2(Pat$fc+1)
-  Mat$fc <- log2(Mat$fc+1)
-  
-  #Create PDF to save PEG dotplot#
-  pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
-  
-  #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
-  print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-          theme_classic() +
-          scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
-          theme(axis.text.x = element_text(angle = 90)) +
-          scale_size_continuous(limits = c(0,max(D2$avg)))+
-          scale_x_discrete(limits = order) +
-          labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
-  #Save PDF#
-  dev.off()
-  
-  #Create PDF to save MEG dotplot#  
-  pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
-  
-  #GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
-  print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-          theme_classic() +
-          scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
-          theme(axis.text.x = element_text(angle = 90)) +
-          scale_size_continuous(limits = c(0,max(D2$avg)))+
-          scale_x_discrete(limits = order) +
-          labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
-  #Save PDF#
-  dev.off()
 }
 
+#### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
+
+#Arrange Fish by over-representation significance, take the identity variable as an order value#
+Fish <- Fish %>% arrange(Fish$ORA_p)
+order <- Fish$Identity
+
+#Filter original IG list with those in the dataset#
+IG2 <-IG[IG$Gene %in% IGs$gene[IGs$Identity %in% c("Agrp/Sst", "Th/Slc6a3")],]
+#Arrange IGs by the chromosomal order#
+IG2 <- IG2 %>% arrange(IG2$Order)
+
+#Filter IGs for Paternally expressed genes (PEGs) only and create Pat using the PEG only filter#
+pat <- IG2 %>% filter(Sex == "P")
+Pat <- D2 %>% filter(gene %in% pat$Gene)
+Pat$fc <- log2(Pat$fc+1)
+
+#Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
+mat <- IG2 %>% filter(Sex == "M" | Sex == "I")
+Mat <- D2 %>% filter(gene %in% mat$Gene)
+Mat$fc <- log2(Mat$fc+1)
+
+### Create Function to align the legend of the dotplot to the centre ###
+align_legend <- function(p, hjust = 0.5)
+{
+  # extract legend
+  g <- cowplot::plot_to_gtable(p)
+  grobs <- g$grobs
+  legend_index <- which(sapply(grobs, function(x) x$name) == "guide-box")
+  legend <- grobs[[legend_index]]
+  
+  # extract guides table
+  guides_index <- which(sapply(legend$grobs, function(x) x$name) == "layout")
+  
+  # there can be multiple guides within one legend box  
+  for (gi in guides_index) {
+    guides <- legend$grobs[[gi]]
+    
+    # add extra column for spacing
+    # guides$width[5] is the extra spacing from the end of the legend text
+    # to the end of the legend title. If we instead distribute it by `hjust:(1-hjust)` on
+    # both sides, we get an aligned legend
+    spacing <- guides$width[5]
+    guides <- gtable::gtable_add_cols(guides, hjust*spacing, 1)
+    guides$widths[6] <- (1-hjust)*spacing
+    title_index <- guides$layout$name == "title"
+    guides$layout$l[title_index] <- 2
+    
+    # reconstruct guides and write back
+    legend$grobs[[gi]] <- guides
+  }
+  
+  # reconstruct legend and write back
+  g$grobs[[legend_index]] <- legend
+  g
+}
+
+dot <- ggplot(D2, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + 
+  geom_point(data = Pat,aes(color = ifelse(fc == 0, NA, fc)), alpha = 0.8) +
+  scale_color_gradientn(colours = c("grey95","grey90","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
+  labs(color = "Log2FC vs\nBackground\n(PEGs)")+
+  new_scale_color()+
+  geom_point(data = Mat, aes(color = ifelse(fc == 0, NA, fc)), alpha = 0.8) +
+  scale_color_gradientn(colours = c("grey95","grey90","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, face = "italic"), axis.title.x = element_text(angle = 180), axis.title.y.right = element_text(angle = 90), axis.text.y = element_text(angle = 180, face = "italic"), legend.title.align=0.5) +
+  scale_size_continuous(limits = c(0,max(D2$avg)))+
+  scale_x_discrete(limits = order, position = "top") +
+  scale_y_discrete(limits = (IG2$Gene))+
+  guides(size = guide_legend(order = 1))+
+  coord_flip()+
+  labs(x = "ARC Neuron Identity (Campbell et al., 2017)", y = "Imprinted Gene", size = "Normalised\nMean\nExpression", color = "Log2FC vs\nBackground\n(MEGs)")
+
+pdf("Outputs/Arc_Neuron_DOTPLOT.pdf", paper= "a4r",  width = 28, height = 18)
+ggdraw(align_legend(dot))
+dev.off()
 
 
 

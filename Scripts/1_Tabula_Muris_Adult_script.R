@@ -15,6 +15,8 @@ library(data.table)
 library(tidyverse)
 library(Seurat)
 library(liger)
+library(ggnewscale)
+library(cowplot)
 
 #Create an Outputs directory to save pending analysis#
 ifelse(!dir.exists(file.path(getwd(), "Outputs")), dir.create(file.path(getwd(), "Outputs")), FALSE)
@@ -299,65 +301,82 @@ for (s in c(1:length(sex))){
   fwrite(Fish, paste("Outputs/", sex[s],"/Enrichment_Analysis.csv", sep =""))
 }  
 
-
-#### STAGE 3 - VISUALISATION DOTPLOT ALL TISSUES ########################################################################################################
+#### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
 
 #Arrange Fish by over-representation significance, take the identity variable as an order value#
 Fish <- Fish %>% arrange(Fish$ORA_p)
 order <- Fish$Identity
 
 #Filter original IG list with those in the dataset#
-IG2 <- IIGG[IIGG$Gene %in% D2$gene,]
+IG2 <-IG[IG$Gene %in% IGs$gene[IGs$Identity %in% c("Brain_Non-Myeloid", "Pancreas", "Bladder")],]
 #Arrange IGs by the chromosomal order#
 IG2 <- IG2 %>% arrange(IG2$Order)
 
 #Filter IGs for Paternally expressed genes (PEGs) only and create Pat using the PEG only filter#
 pat <- IG2 %>% filter(Sex == "P")
 Pat <- D2 %>% filter(gene %in% pat$Gene)
-
-#Recast Gene as a Factor and arrange by chromosomal order#
-Pat$gene <- factor(Pat$gene, levels = rev(pat$Gene))
-Pat <- Pat %>% arrange(rev(gene))
+Pat$fc <- log2(Pat$fc+1)
 
 #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
 mat <- IG2 %>% filter(Sex == "M" | Sex == "I")
 Mat <- D2 %>% filter(gene %in% mat$Gene)
-
-#Recast Gene as a Factor and arrange by chromosomal order#
-Mat$gene <- factor(Mat$gene, levels = rev(mat$Gene))
-Mat <- Mat %>% arrange(rev(gene))
-
-Pat$fc <- log2(Pat$fc+1)
 Mat$fc <- log2(Mat$fc+1)
 
-#Create PDF to save PEG dotplot#
-pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
-
-#GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
-print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-        theme_classic() +
-        scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
-        theme(axis.text.x = element_text(angle = 90)) +
-        scale_size_continuous(limits = c(0,max(D2$avg)))+
-        scale_x_discrete(limits = order) +
-        labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
-#Save PDF#
-dev.off()
-
-#Create PDF to save MEG dotplot#  
-pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
-
-#GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
-print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-        theme_classic() +
-        scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
-        theme(axis.text.x = element_text(angle = 90)) +
-        scale_size_continuous(limits = c(0,max(D2$avg)))+
-        scale_x_discrete(limits = order) +
-        labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
-#Save PDF#
-dev.off()
+### Create Function to align the legend of the dotplot to the centre ###
+align_legend <- function(p, hjust = 0.5)
+{
+  # extract legend
+  g <- cowplot::plot_to_gtable(p)
+  grobs <- g$grobs
+  legend_index <- which(sapply(grobs, function(x) x$name) == "guide-box")
+  legend <- grobs[[legend_index]]
+  
+  # extract guides table
+  guides_index <- which(sapply(legend$grobs, function(x) x$name) == "layout")
+  
+  # there can be multiple guides within one legend box  
+  for (gi in guides_index) {
+    guides <- legend$grobs[[gi]]
+    
+    # add extra column for spacing
+    # guides$width[5] is the extra spacing from the end of the legend text
+    # to the end of the legend title. If we instead distribute it by `hjust:(1-hjust)` on
+    # both sides, we get an aligned legend
+    spacing <- guides$width[5]
+    guides <- gtable::gtable_add_cols(guides, hjust*spacing, 1)
+    guides$widths[6] <- (1-hjust)*spacing
+    title_index <- guides$layout$name == "title"
+    guides$layout$l[title_index] <- 2
+    
+    # reconstruct guides and write back
+    legend$grobs[[gi]] <- guides
+  }
+  
+  # reconstruct legend and write back
+  g$grobs[[legend_index]] <- legend
+  g
 }
+
+dot <- ggplot(D2, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + 
+  geom_point(data = Pat,aes(color = ifelse(fc == 0, NA, fc)), alpha = 0.8) +
+  scale_color_gradientn(colours = c("grey95","grey90","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
+  labs(color = "Log2FC vs\nBackground\n(PEGs)")+
+  new_scale_color()+
+  geom_point(data = Mat, aes(color = ifelse(fc == 0, NA, fc)), alpha = 0.8) +
+  scale_color_gradientn(colours = c("grey95","grey90","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, face = "italic"), axis.title.x = element_text(angle = 180), axis.title.y.right = element_text(angle = 90), axis.text.y = element_text(angle = 180), legend.title.align=0.5) +
+  scale_size_continuous(limits = c(0,max(D2$avg)))+
+  scale_x_discrete(limits = order, position = "top") +
+  scale_y_discrete(limits = (IG2$Gene))+
+  guides(size = guide_legend(order = 1))+
+  coord_flip()+
+  labs(x = "Adult Organ Identity (Tabula Muris)", y = "Imprinted Gene", size = "Normalised\nMean\nExpression", color = "Log2FC vs\nBackground\n(MEGs)")
+
+pdf("Outputs/TM_ADULT_DOTPLOT.pdf", paper= "a4r",  width = 28, height = 18)
+ggdraw(align_legend(dot))
+dev.off()
+
 
 
 

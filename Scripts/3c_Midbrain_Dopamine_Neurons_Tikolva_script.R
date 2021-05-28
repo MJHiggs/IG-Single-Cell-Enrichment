@@ -3,6 +3,8 @@
 #read in packages#
 library(tidyverse)
 library(data.table)
+library(cowplot)
+library(ggnewscale)
 library(liger)
 BiocManager::install("GEOquery")
 library(GEOquery)
@@ -29,9 +31,12 @@ setwd("GSE116138/")
 #List the files for the cells# 
 files <- list.files()
 #Select only files that have an ID cluster to match to (recreating the previous filtering)#
-Filter <- substr(files,1,nchar(files)-15) %in% ID$SM
-#Add a true at the beginning to keep the genes column#
-Filter <- c(TRUE, Filter)
+filter <- substr(files,1,nchar(files)-15) %in% ID$SM
+files <- files[filter]
+#select only postnatal files#
+Age_Filter <- ID$Source %in% c("P90", "P7", "P1")
+files <- files[Age_Filter]
+
 #Create two dataframes, one with the RPKM values to work off and the other with raw count values to calculate gene filter from#
 RPKM <- data.frame("genes"  = read.table(files[1])$V1)
 Counts <- data.frame("genes"  = read.table(files[1])$V1)
@@ -61,10 +66,13 @@ names(dict_cells) <- ID$SM
 #create gene filter of 20 individual cell expression#
 filter <- rowSums(Counts[,-1] != 0) >= 20
 
+#Log transform rpkm#
+RPKM[,2:651] <- log(RPKM[,2:651]+1)
+
 #Apply cell and gene filter to RPKM to create test object - wil#
-wil <- RPKM[filter, Filter]
+wil <- RPKM[filter,]
 wil <- data.frame(t(wil))
-colnames(wil) <- RPKM[filter, Filter]$gene
+colnames(wil) <- RPKM[filter,]$gene
 
 #Create iden column of cell identities and remove any that are Not assigned#
 wil$iden <- dict_cells[rownames(wil)]
@@ -169,7 +177,7 @@ for (e in 2:(ncol(q))){
   Fish[e-1,2] = nrow(ORA)
   
   #Filter ORA for imprinted genes only and add that to IGs file and the total number to Fish#
-  ig <- ORA %>% filter(gene %in% IG$ï..Ensmbl)
+  ig <- ORA %>% filter(gene %in% IG$ï..Ensembl)
   ig$gene <- genes_dict[as.character(ig$gene)]
   IGs <- rbind(IGs, ig)
   Fish[e-1,3] = nrow(ig)
@@ -192,7 +200,7 @@ fwrite(IGs, paste("Outputs/Upregulated_IGs.csv", sep =""))
 ### OVER REPRESENTATION ANALYSIS (ORA) ########################################################################
 
 #Create an identity group filter based on having a minimum of 5 imprinted genes upregulated#
-tissue_ORA <- Fish$Identity[Fish$IG >= (as.numeric(sum(q$gene %in% IG$ï..Ensmbl))/20)]
+tissue_ORA <- Fish$Identity[Fish$IG >= (as.numeric(sum(q$gene %in% IG$ï..Ensembl))/20)]
 
 #As long as one cell identity has 5 or more IGs, run a Fisher's Exact test#  
 if(length(tissue_ORA) > 0){
@@ -200,7 +208,7 @@ if(length(tissue_ORA) > 0){
   for (c in 1:nrow(Fish)){
     if(Fish$Identity[c] %in% tissue_ORA){
       #Create the 2x2 matrix for the fisher's exact test - no. IG in group, no. of IG left over, no. of UpRegulated genes in group minus no. of IGs, all genes left over
-      test <- data.frame(gene.interest=c(as.numeric(Fish[c,3]),as.numeric(sum(q$gene %in% IG$ï..Ensmbl) - Fish[c,3])), gene.not.interest=c((as.numeric(Fish[c,2]) - as.numeric(Fish[c,3])),as.numeric(nrow(q) - Fish[c,2])- as.numeric(sum(q$gene %in% IG$ï..Ensmbl) - Fish[c,3])))
+      test <- data.frame(gene.interest=c(as.numeric(Fish[c,3]),as.numeric(sum(q$gene %in% IG$ï..Ensembl) - Fish[c,3])), gene.not.interest=c((as.numeric(Fish[c,2]) - as.numeric(Fish[c,3])),as.numeric(nrow(q) - Fish[c,2])- as.numeric(sum(q$gene %in% IG$ï..Ensembl) - Fish[c,3])))
       row.names(test) <- c("In_category", "not_in_category")
       f <- fisher.test(test, alternative = "greater")
       #Update Fish with 
@@ -231,7 +239,7 @@ Fish <- merge(Fish, igs, by = "Identity")
 names(Fish)[length(names(Fish))] <- "Mean FC IG"
 
 ##Calculate mean fold change for the rest of the upregulated genes per tissue and update a column in Fish## 
-rest <- DEGs[!(DEGs$gene %in% IG$ï..Ensmbl),] %>% group_by(Identity) %>% summarise("mean" = mean(fc))
+rest <- DEGs[!(DEGs$gene %in% IG$ï..Ensembl),] %>% group_by(Identity) %>% summarise("mean" = mean(fc))
 
 #Merge Fish with rest to have a Mean Fold change Rest of genes column#
 Fish <- merge(Fish, rest, by = "Identity")
@@ -252,9 +260,9 @@ if(length(tissue_GSEA) > 0){
     file <- log2(daa$fc)
     #replace infinity values with max values and name the file with gene names#
     file[is.infinite(file)] <- max(file[is.finite(file)])
-    file <- set_names(file, daa$gene_name)
+    file <- set_names(file, daa$gene)
     #create imprinted gene list to use for GSEA#
-    ig <- as.character(IG$Gene)
+    ig <- as.character(IG$ï..Ensembl)
     #save the graph from the GSEA as a pdf#
     pdf(paste("Outputs/GSEA/",gsub("[^A-Za-z0-9 ]","",tissue_GSEA[f]), "_GSEA.pdf", sep=""))
     #Add GSEA p value to Fish#
@@ -273,13 +281,13 @@ if(length(tissue_GSEA) > 0){
 ### IMPRINTED GENE TOP CELL EXPRESSION ######################################################################    
 
 #Filter Main data for Imprinted Genes and create Identity column#
-D <- wil[,colnames(wil) %in% c(as.character(IG$ï..Ensmbl), "iden")] %>% gather("gene", "reads", -iden)
+D <- wil[,colnames(wil) %in% c(as.character(IG$ï..Ensembl), "iden")] %>% gather("gene", "reads", -iden)
 D$gene <- genes_dict[D$gene]
 D <- D[complete.cases(D),]
 #Gather this data and group by gene, identity and get per gene per identity read averages#
 D <- D %>% group_by(gene, iden) %>% summarise("avg" = mean(as.numeric(reads)))
 #Gather fc file by iden and value and filter that for imprinted genes#
-FC <- fc %>% gather(iden, fc, -gene) %>% filter(gene %in% as.character(IG$ï..Ensmbl))
+FC <- fc %>% gather(iden, fc, -gene) %>% filter(gene %in% as.character(IG$ï..Ensembl))
 FC$gene <- genes_dict[as.character(FC$gene)]
 FC <- FC[complete.cases(FC),]
 #Join the two datasets#
@@ -299,53 +307,71 @@ Fish <- Fish %>% arrange(Fish$ORA_p)
 order <- Fish$Identity
 
 #Filter original IG list with those in the dataset#
-IG2 <- IG[IG$Gene %in% D2$gene,]
+IG2 <-IG[IG$Gene %in% IGs$gene[IGs$Identity %in% c("Slc6a3+",  "Vip+")],]
 #Arrange IGs by the chromosomal order#
 IG2 <- IG2 %>% arrange(IG2$Order)
 
 #Filter IGs for Paternally expressed genes (PEGs) only and create Pat using the PEG only filter#
 pat <- IG2 %>% filter(Sex == "P")
 Pat <- D2 %>% filter(gene %in% pat$Gene)
-
-#Recast Gene as a Factor and arrange by chromosomal order#
-Pat$gene <- factor(Pat$gene, levels = rev(pat$Gene))
-Pat <- Pat %>% arrange(rev(gene))
+Pat$fc <- log2(Pat$fc+1)
 
 #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
 mat <- IG2 %>% filter(Sex == "M" | Sex == "I")
 Mat <- D2 %>% filter(gene %in% mat$Gene)
-
-#Recast Gene as a Factor and arrange by chromosomal order#
-Mat$gene <- factor(Mat$gene, levels = rev(mat$Gene))
-Mat <- Mat %>% arrange(rev(gene))
-
-Pat$fc <- log2(Pat$fc+1)
 Mat$fc <- log2(Mat$fc+1)
 
-#Create PDF to save PEG dotplot#
-pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
+### Create Function to align the legend of the dotplot to the centre ###
+align_legend <- function(p, hjust = 0.5)
+{
+  # extract legend
+  g <- cowplot::plot_to_gtable(p)
+  grobs <- g$grobs
+  legend_index <- which(sapply(grobs, function(x) x$name) == "guide-box")
+  legend <- grobs[[legend_index]]
+  
+  # extract guides table
+  guides_index <- which(sapply(legend$grobs, function(x) x$name) == "layout")
+  
+  # there can be multiple guides within one legend box  
+  for (gi in guides_index) {
+    guides <- legend$grobs[[gi]]
+    
+    # add extra column for spacing
+    # guides$width[5] is the extra spacing from the end of the legend text
+    # to the end of the legend title. If we instead distribute it by `hjust:(1-hjust)` on
+    # both sides, we get an aligned legend
+    spacing <- guides$width[5]
+    guides <- gtable::gtable_add_cols(guides, hjust*spacing, 1)
+    guides$widths[6] <- (1-hjust)*spacing
+    title_index <- guides$layout$name == "title"
+    guides$layout$l[title_index] <- 2
+    
+    # reconstruct guides and write back
+    legend$grobs[[gi]] <- guides
+  }
+  
+  # reconstruct legend and write back
+  g$grobs[[legend_index]] <- legend
+  g
+}
 
-#GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
-print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-        theme_classic() +
-        scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
-        theme(axis.text.x = element_text(angle = 90)) +
-        scale_size_continuous(limits = c(0,max(D2$avg)))+
-        scale_x_discrete(limits = order) +
-        labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
-#Save PDF#
-dev.off()
+dot <- ggplot(D2, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + 
+  geom_point(data = Pat,aes(color = ifelse(fc == 0, NA, fc)), alpha = 0.8) +
+  scale_color_gradientn(colours = c("grey95","grey90","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
+  labs(color = "Log2FC vs\nBackground\n(PEGs)")+
+  new_scale_color()+
+  geom_point(data = Mat, aes(color = ifelse(fc == 0, NA, fc)), alpha = 0.8) +
+  scale_color_gradientn(colours = c("grey95","grey90","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, face = "italic"), axis.title.x = element_text(angle = 180), axis.title.y.right = element_text(angle = 90), axis.text.y = element_text(angle = 180), legend.title.align=0.5) +
+  scale_size_continuous(limits = c(0,max(D2$avg)))+
+  scale_x_discrete(limits = order, position = "top") +
+  scale_y_discrete(limits = (IG2$Gene))+
+  guides(size = guide_legend(order = 1))+
+  coord_flip()+
+  labs(x = "DA neuron Identity (ventral midbrain)", y = "Imprinted Gene", size = "Normalised\nMean\nExpression", color = "Log2FC vs\nBackground\n(MEGs)")
 
-#Create PDF to save MEG dotplot#  
-pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
-
-#GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
-print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-        theme_classic() +
-        scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
-        theme(axis.text.x = element_text(angle = 90)) +
-        scale_size_continuous(limits = c(0,max(D2$avg)))+
-        scale_x_discrete(limits = order) +
-        labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
-#Save PDF#
+pdf("Outputs/Tik_DA_Neuron_DOTPLOT.pdf", paper= "a4r",  width = 28, height = 18)
+ggdraw(align_legend(dot))
 dev.off()

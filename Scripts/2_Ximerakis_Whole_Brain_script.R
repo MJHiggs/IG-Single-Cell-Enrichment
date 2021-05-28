@@ -3,6 +3,8 @@
 #read in packages#
 library(data.table)
 library(tidyverse)
+library(cowplot)
+library(ggnewscale)
 library(liger)
 BiocManager::install("GEOquery")
 library(GEOquery)
@@ -31,14 +33,14 @@ data <- fread(files[1])
 Final <- data.frame("gene" = data$V1)
 
 #Loop over each dataframe, remove V1 and cbind to the total#
-for(a in 1:length(files)){
+for(a in 1:8){
   data <- fread(files[a])
   data$V1 = NULL
   Final <- cbind(Final, data)
 }
 
 #Create scaling factors to normalize expression data by - 10,000 reads#
-UMI <- 10000/colSums(Final[,-1])
+Scale <- 10000/colSums(Final[,-1])
 
 ## Create filter for genes expressed in 20 or more cells and filter data by it ##
 percell <- rowSums(Final[,-1] != 0)
@@ -71,7 +73,7 @@ all_global_cells <- all_global_cells[-1,]
 ## Looping through columns, multiply the values by their scaling factor and log transform the data to create final normalised data#
 for(i in 1:ncol(all_global_cells)){
   all_global_cells[,i] <- as.numeric(as.character(all_global_cells[,i]))
-  all_global_cells[,i] <- all_global_cells[,i] * UMI
+  all_global_cells[,i] <- all_global_cells[,i] * Scale
   all_global_cells[,i] <- log(all_global_cells[,i] + 1)
   print(i)
 }
@@ -337,47 +339,64 @@ IG2 <- IG2 %>% arrange(IG2$Order)
 #Filter IGs for Paternally expressed genes (PEGs) only and create Pat using the PEG only filter#
 pat <- IG2 %>% filter(Sex == "P")
 Pat <- D2 %>% filter(gene %in% pat$Gene)
-
-#Recast Gene as a Factor and arrange by chromosomal order#
-Pat$gene <- factor(Pat$gene, levels = rev(pat$Gene))
-Pat <- Pat %>% arrange(rev(gene))
+Pat$fc <- log2(Pat$fc+1)
 
 #Filter IGs for maternally expressed genes (MEGs) only and create Mat using the MEG only filter#
 mat <- IG2 %>% filter(Sex == "M" | Sex == "I")
 Mat <- D2 %>% filter(gene %in% mat$Gene)
-
-#Recast Gene as a Factor and arrange by chromosomal order#
-Mat$gene <- factor(Mat$gene, levels = rev(mat$Gene))
-Mat <- Mat %>% arrange(rev(gene))
-
-Pat$fc <- log2(Pat$fc+1)
 Mat$fc <- log2(Mat$fc+1)
 
-#Create PDF to save PEG dotplot#
-pdf(paste("Outputs/", data_names[a],"/", "PEG_DOTPLOT.pdf", sep=""))
+### Create Function to align the legend of the dotplot to the centre ###
+align_legend <- function(p, hjust = 0.5)
+{
+  # extract legend
+  g <- cowplot::plot_to_gtable(p)
+  grobs <- g$grobs
+  legend_index <- which(sapply(grobs, function(x) x$name) == "guide-box")
+  legend <- grobs[[legend_index]]
+  
+  # extract guides table
+  guides_index <- which(sapply(legend$grobs, function(x) x$name) == "layout")
+  
+  # there can be multiple guides within one legend box  
+  for (gi in guides_index) {
+    guides <- legend$grobs[[gi]]
+    
+    # add extra column for spacing
+    # guides$width[5] is the extra spacing from the end of the legend text
+    # to the end of the legend title. If we instead distribute it by `hjust:(1-hjust)` on
+    # both sides, we get an aligned legend
+    spacing <- guides$width[5]
+    guides <- gtable::gtable_add_cols(guides, hjust*spacing, 1)
+    guides$widths[6] <- (1-hjust)*spacing
+    title_index <- guides$layout$name == "title"
+    guides$layout$l[title_index] <- 2
+    
+    # reconstruct guides and write back
+    legend$grobs[[gi]] <- guides
+  }
+  
+  # reconstruct legend and write back
+  g$grobs[[legend_index]] <- legend
+  g
+}
 
-#GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)#
-print(ggplot(Pat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-        theme_classic() +
-        scale_color_gradientn(colours = c("grey95","grey60","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
-        theme(axis.text.x = element_text(angle = 90)) +
-        scale_size_continuous(limits = c(0,max(D2$avg)))+
-        scale_x_discrete(limits = order) +
-        labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
-#Save PDF#
+dot <- ggplot(D2, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + 
+  geom_point(data = Pat,aes(color = ifelse(fc == 0, NA, fc)), alpha = 0.8) +
+  scale_color_gradientn(colours = c("grey95","grey90","blue","darkblue","midnightblue"), na.value="midnightblue", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
+  labs(color = "Log2FC vs\nBackground\n(PEGs)")+
+  new_scale_color()+
+  geom_point(data = Mat, aes(color = ifelse(fc == 0, NA, fc)), alpha = 0.8) +
+  scale_color_gradientn(colours = c("grey95","grey90","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,4)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, face = "italic"), axis.title.x = element_text(angle = 180), axis.title.y.right = element_text(angle = 90), axis.text.y = element_text(angle = 180), legend.title.align=0.5) +
+  scale_size_continuous(limits = c(0,max(D2$avg)))+
+  scale_x_discrete(limits = order, position = "top") +
+  scale_y_discrete(limits = (IG2$Gene))+
+  guides(size = guide_legend(order = 1))+
+  coord_flip()+
+  labs(x = "Cell Lineage Identity (Whole Brain - Ximerakis et al., 2019)", y = "Imprinted Gene", size = "Normalised\nMean\nExpression", color = "Log2FC vs\nBackground\n(MEGs)")
+
+pdf("Outputs/Ximerakis_Cell_lineage_DOTPLOT.pdf", paper= "a4r",  width = 28, height = 18)
+ggdraw(align_legend(dot))
 dev.off()
-
-#Create PDF to save MEG dotplot#  
-pdf(paste("Outputs/", data_names[a],"/", "MEG_DOTPLOT.pdf", sep=""))
-
-#GGplot dotplot, x = cell identity, y = gene identity, color = fc(gradated up to 5FC+), size = avg expression(0 to max expression registered)# 
-print(ggplot(Mat, aes(x=iden, y=gene, color=ifelse(fc == 0, NA, fc), size=ifelse(avg==0, NA, avg))) + geom_point(alpha = 0.8) +
-        theme_classic() +
-        scale_color_gradientn(colours = c("grey95","grey60","orange","red","darkred"), na.value="darkred", values = c(0, 0.2, 0.4, 0.6, 0.8 ,1), limits = c(0,5)) +
-        theme(axis.text.x = element_text(angle = 90)) +
-        scale_size_continuous(limits = c(0,max(D2$avg)))+
-        scale_x_discrete(limits = order) +
-        labs(x = "Cell Identity", y = "Imprinted Gene", size = "Normalised Mean Expression", color = "Log2FC vs Background"))
-#Save PDF#
-dev.off()
-
