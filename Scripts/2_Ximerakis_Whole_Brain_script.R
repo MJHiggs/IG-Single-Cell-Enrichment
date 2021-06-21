@@ -303,7 +303,6 @@ for (s in c(1:length(sex))){
   
   ### IMPRINTED GENE TOP TISSUE EXPRESSION ######################################################################    
   
-  
   #Filter Main data for Imprinted Genes and create Identity column#
   D <- data.frame(wil[,colnames(wil) %in% as.character(IIGG$Gene)])
   D$iden <- wil$iden
@@ -318,12 +317,38 @@ for (s in c(1:length(sex))){
   u <- D2 %>% group_by(gene) %>% filter(gene %in% IIGG$Gene & (avg == max(avg) & max(avg) > 0))
   fwrite(u, paste("Outputs/", sex[s], "/IG_top_expressed.csv", sep =""))
   #update a Fish column with the number of IGs with top expression in that tissue#
-  u <- u %>% group_by(iden) %>% summarise("Top Tissue IGs" = n())
+  u <- u %>% group_by(iden) %>% summarise("Top_Tissue_IGs" = n())
   Fish <- merge(Fish, u, by.x = "Identity", by.y = "iden", all = TRUE)
   
-  #write the finished Fish file#
-  fwrite(Fish, paste("Outputs/", sex[s], "/ORA_GSEA.csv", sep =""))
-}  
+  fwrite(Fish, paste("Outputs/", sex[s],"/Enrichment_Analysis.csv", sep =""))
+  
+##### Calculate Avg Normalised Expression across identity groups ########
+
+#Create D again - the dataset filtered for imprinted genes and iden readded#
+D <- data.frame(wil[,colnames(wil) %in% as.character(IIGG$Gene)])
+D$iden <- wil$iden
+D <- D %>% gather(gene, reads, -iden)
+
+#Create dataframe to save average expression values to#
+avg_expr <- data.frame(iden <- unique(as.character(D$iden)))
+
+#Create rest which includes all other genes#
+rest <- data.frame(wil[,!(colnames(wil) %in% as.character(IIGG$Gene))])
+
+#Loop through each identity groups and calculate mean normalised expression for imprinted genes and the rest#
+for(i in 1:length(unique(D$iden))){
+  #extract the reads from identity of interest#
+  values <- as.numeric(as.character(D[D$iden == iden[i],]$reads))
+  #take mean value and save it to avg_expr
+  avg_expr[i,2] <- mean(values)
+  a <- rest[rest$iden == iden[i],]
+  a <- a %>% gather("gene", "reads", -iden)
+  avg_expr[i,3] <- mean(a$reads)
+}
+
+colnames(avg_expr) <- c("identity", "mean_exp_IG", "mean_exp_rest_of_genes")
+
+write.csv(avg_expr, paste("Outputs/Xim_mean_norm_expr.csv", sep =""))
 
 #### STAGE 3 - VISUALISATION DOTPLOT for NENDC ########################################################################################################
 

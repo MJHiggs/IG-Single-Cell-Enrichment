@@ -299,7 +299,33 @@ for (s in c(1:length(sex))){
   Fish <- merge(Fish, u, by.x = "Identity", by.y = "iden", all = TRUE)
   
   fwrite(Fish, paste("Outputs/", sex[s],"/Enrichment_Analysis.csv", sep =""))
-}  
+} 
+
+### Calculate Avg Normalised Expression across identity groups ###
+
+#Create D again - the dataset filtered for imprinted genes and iden readded#
+D <- wil[,colnames(wil) %in% c(as.character(IIGG$Gene), "iden")] %>% gather("gene", "reads", -iden)
+
+#Create dataframe to save average expression values to#
+avg_expr <- data.frame(iden <- unique(as.character(D$iden)))
+
+#Create rest which includes all other genes#
+rest <- wil[,!(colnames(wil) %in% as.character(IIGG$Gene))]
+
+#Loop through each identity groups and calculate mean normalised expression for imprinted genes and the rest#
+for(i in 1:length(unique(D$iden))){
+  #extract the reads from identity of interest#
+  values <- as.numeric(as.character(D[D$iden == iden[i],]$reads))
+  #take mean value and save it to avg_expr
+  avg_expr[i,2] <- mean(values)
+  a <- rest[rest$iden == iden[i],]
+  a <- a %>% gather("gene", "reads", -iden)
+  avg_expr[i,3] <- mean(a$reads)
+}
+
+colnames(avg_expr) <- c("identity", "mean_exp_IG", "mean_exp_rest_of_genes")
+
+write.csv(avg_expr, paste("Outputs/tabulamuris_mean_norm_expr.csv", sep =""))
 
 #### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
 

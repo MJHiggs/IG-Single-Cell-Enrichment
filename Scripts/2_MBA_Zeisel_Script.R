@@ -73,7 +73,7 @@ Fil_Neuron <- which(filter_neuron, arr.ind = FALSE)
 Scale <- 5000/lfile$col.attrs$`_Total`[]
 
 #Create list of datasets to put through basis workflow#
-data_names <- c("class_whole", "tissue_neurons", "subclass_neurons")
+data_names <- c("Cell_Lineage", "Brain_Region_Neurons", "Cell_Subpopulation_Neurons")
 
 #Loop through the data configuration available#
 for (a in 1:length(data_names)){
@@ -325,12 +325,12 @@ for (a in 1:length(data_names)){
     D$iden <- eval(parse(text = data_names[a]))
     #Gather this data and group by gene, identity and get per gene per identity read averages#
     D <- D  %>% gather("gene", "reads", -iden)
-    D <- D %>% group_by(gene, iden) %>% summarise("avg" = mean(as.numeric(reads)))
+    D2 <- D %>% group_by(gene, iden) %>% summarise("avg" = mean(as.numeric(reads)))
     #Create matching file of fc's with just imprinted genes#
     FC <- fc %>% filter(fc$ensmbl %in% IIGG$ï..Ensembl)
     FC <- FC[,-1] %>% gather(iden, fc, -gene) 
     #Create D2 - combination of D and FC ready for making dotplots#
-    D2 <- left_join(D, FC, by = c("gene","iden"))
+    D2 <- left_join(D2, FC, by = c("gene","iden"))
     
     #Create u with the tissue with max expression for each IG and save that file ##
     u <- D2 %>% group_by(gene) %>% filter(gene %in% IIGG$Gene & avg == max(avg))
@@ -341,8 +341,45 @@ for (a in 1:length(data_names)){
     
     #write the finished Fish file#
     fwrite(Fish, paste("Outputs/", data_names[a], "/", sex[s], "/Enrichment_Analysis.csv", sep =""))
-  }  
+  }
+  ##### Calculate Avg Normalised Expression across identity groups ########
+  
+  #Create dataframe to save average expression values to#
+  avg_expr <- data.frame(iden <- unique(as.character(D$iden)))
+  
+  #Loop through each identity groups and calculate mean normalised expression for imprinted genes#
+  for(i in 1:length(unique(D$iden))){
+    #extract the reads from identity of interest#
+    values <- as.numeric(as.character(D[D$iden == iden[i],]$reads))
+    #take mean value and save it to avg_expr
+    avg_expr[i,2] <- mean(values)
+  }
+  
+  #Loop through each identity group and extract the list of expression values for every cell in that identity group for all genes other than the imprinted genes#
+  for(j in 1:length(unique(D$iden))){
+    #create a filter for only cells that are in that identity group#
+    filter <- eval(parse(text = data_names[a])) == iden[j]
+    #preset rest to 0#
+    rest <- 0
+    #loop over every cell and if it is in the specified identity group, collect all the reads, normalise them and add them to rest#
+    for(i in 1:length(filter)){
+      if(filter[i] == TRUE){
+        test <- lfile[["matrix"]][i, !(lfile$row.attrs$Accession[] %in% q$ensmbl[q$ensmbl %in% IIGG$ï..Ensembl]) & lfile$row.attrs$Accession[] %in% gene]
+        test <- log((test * Scale[i])+1)
+        rest <- rest + sum(test)
+      }
+    }
+    #Calculate mean_norm_expression and add it to the avg_expr object as a new column value#  
+    df[j,3] <- rest / (sum(filter)* sum(!(lfile$row.attrs$Accession[] %in% q$ensmbl[q$ensmbl %in% IIGG$ï..Ensembl]) & lfile$row.attrs$Accession[] %in% gene))
+    #track progress in the console
+    #print(j)
+  }
+  
+  colnames(avg_expr) <- c("identity", "mean_exp_IG", "mean_exp_rest_of_genes")
+  
+  write.csv(avg_expr, paste("Outputs/Zeisel_", data_names[a], "_mean_norm_expr.csv", sep =""))
 }     
+
 #### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
   
 #Arrange Fish by GSEA significance, take the identity variable as an order value#

@@ -294,7 +294,7 @@ for(a in 1:length(data_names)){
     D <- data.frame(wil[,colnames(wil) %in% as.character(IIGG$Gene)], stringsAsFactors = FALSE) 
     D$iden <- dict[rownames(D)]
     D <- D %>% gather("gene", "reads", -iden)
-
+    
     #Gather this data and group by gene, identity and get per gene per identity read averages#
     D <- D %>% group_by(gene, iden) %>% summarise("avg" = mean(as.numeric(reads)))
     
@@ -313,8 +313,37 @@ for(a in 1:length(data_names)){
     
     #Write the finished Fish file#
     fwrite(Fish, paste("Outputs/", data_names[a], "/", sex[s], "/Enrichment_Analysis.csv", sep =""))
+    
   }   
 
+### Calculate Avg Normalised Expression across identity groups ###
+  
+  #Create D again - the dataset filtered for imprinted genes and iden readded#
+  D <- data.frame(wil[,colnames(wil) %in% as.character(IIGG$Gene)], stringsAsFactors = FALSE) 
+  D$iden <- dict[rownames(D)]
+  D <- D %>% gather("gene", "reads", -iden)
+  
+  #Create dataframe to save average expression values to#
+  avg_expr <- data.frame(iden <- unique(as.character(D$iden)))
+  
+  #Create rest which includes all other genes#
+  rest <- data.frame(wil[,!(colnames(wil) %in% as.character(IIGG$Gene))], stringsAsFactors = FALSE) 
+  
+  #Loop through each identity groups and calculate mean normalised expression for imprinted genes and the rest#
+  for(i in 1:length(unique(D$iden))){
+    #extract the reads from identity of interest#
+    values <- as.numeric(as.character(D[D$iden == iden[i],]$reads))
+    #take mean value and save it to avg_expr
+    avg_expr[i,2] <- mean(values)
+    a <- rest[rest$iden == iden[i],]
+    a <- a %>% gather("gene", "reads", -iden)
+    avg_expr[i,3] <- mean(a$reads)
+  }
+  
+  colnames(avg_expr) <- c("identity", "mean_exp_IG", "mean_exp_rest_of_genes")
+  
+  write.csv(avg_expr, paste("Outputs/MCA_mean_norm_expr.csv", sep =""))
+  
   #### STAGE 3 - VISUALISATION DOTPLOT ########################################################################################################
   
   #Arrange Fish by over-representation significance, take the identity variable as an order value#
